@@ -4,6 +4,7 @@ import styles from '../styles/Pages/ListPage.module.css';
 import { fetchRollingList } from '../api/list-api';
 import Header from '../components/common/Header';
 import Button from '../components/common/Button';
+import buttonStyles from '../styles/Button.module.css';
 
 const colorMap = {
   beige: '#FFE2AD',
@@ -13,10 +14,10 @@ const colorMap = {
 };
 
 const imageMap = {
-  beige: '/public/images/yellow-backimg.png',
-  purple: '/public/images/purple-backimg.png',
-  blue: '/public/images/blue-backimg.png',
-  green: '/public/images/green-backimg.png',
+  beige: '/images/yellow-backimg.png',
+  purple: '/images/purple-backimg.png',
+  blue: '/images/blue-backimg.png',
+  green: '/images/green-backimg.png',
 };
 
 function ListPage() {
@@ -184,7 +185,7 @@ function ListPage() {
                     {item.recentMessages.slice(0, 3).map((msg, index) => (
                       <img
                         key={msg.id}
-                        src={msg.profileImageURL || '/public/icons/profile.png'}
+                        src={msg.profileImageURL || '/icons/profile.png'}
                         className={styles['list-page__profile-image']}
                         style={{ left: `${index * 16}px` }}
                       />
@@ -256,7 +257,7 @@ function ListPage() {
                     {item.recentMessages.slice(0, 3).map((msg, index) => (
                       <img
                         key={msg.id}
-                        src={msg.profileImageURL || '/public/icons/profile.png'}
+                        src={msg.profileImageURL || '/icons/profile.png'}
                         className={styles['list-page__profile-image']}
                         style={{ left: `${index * 16}px` }}
                       />
@@ -300,7 +301,7 @@ function ListPage() {
       </div>
 
       <div className={styles['list-page__buttons']}>
-        <Button onClick={() => goToPage('/post')} className="button--primary">
+        <Button onClick={() => goToPage('/post')} className={buttonStyles.button__primary}>
           나도 만들어보기
         </Button>
       </div>
