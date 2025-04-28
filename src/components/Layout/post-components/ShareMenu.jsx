@@ -44,6 +44,7 @@ const ShareMenu = ({ onClick, commentCount }) => {
 
   useEffect(() => {
     const appKey = import.meta.env.VITE_KAKAO_APP_KEY;
+    console.log("app key@@@@");
     console.log(appKey);
     Kakao.init(appKey);
     return Kakao.cleanup();
