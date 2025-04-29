@@ -27,7 +27,6 @@ const PostPage = () => {
 	const [modalItem, setModalItem] = useState(false);
 	const [selectedEmoji, setSelectedEmoji] = useState({});
 	const [reLoading, setReLoading] = useState(false);
-	const [EmojiSend, setEmojiSend] = useState({});
 	const { id } = useParams();
 	const { name, backgroundColor, backgroundImageURL, messageCount, reactionCount, recentMessages, topReactions } = data;
 	const background =
@@ -122,12 +121,11 @@ const PostPage = () => {
 		const emojiDataSend = async () => {
 			try {
 				const dataSend = await postRecipientsReactions(id, selectedEmoji);
-				setEmojiSend(dataSend);
+				setReLoading((prev) => !prev);
 			} catch (error) {
 				console.error('Post page 데이터 불러오기 실패!', error);
 			}
 		};
-		setReLoading((prev) => !prev);
 		emojiDataSend();
 	}, [selectedEmoji]);
 
@@ -155,11 +153,18 @@ const PostPage = () => {
 					{messageCount === 0
 						? ''
 						: messages.map((message) => {
+								const senderLength = 10;
+								let senderName;
+								if (message.sender?.length > senderLength) {
+									senderName = message.sender.slice(0, senderLength) + '...';
+								} else {
+									senderName = message.sender;
+								}
 								return (
 									<Card
 										key={message.id}
 										id={message.id}
-										sender={message.sender}
+										sender={senderName}
 										relationship={message.relationship}
 										profileImg={message.profileImageURL}
 										cardFont={message.font}

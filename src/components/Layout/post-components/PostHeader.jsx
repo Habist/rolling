@@ -7,7 +7,7 @@ import share from '/icons/share.png';
 import ShareMenu from './ShareMenu';
 import { useRef, useState } from 'react';
 import { useEffect } from 'react';
-import EmojiPicker from 'emoji-picker-react';
+import EmojiPicker, { EmojiStyle } from 'emoji-picker-react';
 import EmojiDropDown from './EmojiDropDown';
 
 const PostHeader = ({
@@ -18,7 +18,6 @@ const PostHeader = ({
 	reactionCount,
 	topReactions,
 	setSelectedEmoji,
-	setReLoading,
 }) => {
 	const [isOpen, setIsOpen] = useState(false);
 	const [isEmojiOpen, setIsEmojiOpen] = useState(false);
@@ -26,6 +25,7 @@ const PostHeader = ({
 
 	const emojiMoreRef = useRef(null);
 	const shareButtonRef = useRef(null);
+	const emojiCategory = ['suggested', 'smileys_people', 'animals_nature', 'travel_places', 'activities'];
 
 	const handleClick = () => {
 		setIsOpen(!isOpen);
@@ -41,7 +41,6 @@ const PostHeader = ({
 			type: 'increase',
 		};
 		setSelectedEmoji(newReaction);
-		setReLoading((prev) => !prev);
 		setIsEmojiOpen((prev) => !prev);
 	};
 
@@ -104,6 +103,9 @@ const PostHeader = ({
 									width={307}
 									height={393}
 									lazyLoadEmojis={true}
+									emojiStyle={EmojiStyle.NATIVE}
+									skinTonesDisabled={true}
+									categories={emojiCategory}
 									onEmojiClick={(emojiData, event) => handleEmojiClick(emojiData, event)}
 								/>
 							</div>

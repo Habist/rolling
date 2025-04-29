@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styles from '../styles/Pages/ListPage.module.css';
 import { fetchRollingList } from '../api/list-api';
@@ -6,307 +6,188 @@ import Header from '../components/common/Header';
 import Button from '../components/common/Button';
 import buttonStyles from '../styles/Button.module.css';
 
-const colorMap = {
-  beige: '#FFE2AD',
-  purple: '#ECD9FF',
-  blue: '#B1E4FF',
-  green: '#D0F5C3',
-};
+const CARD_WIDTH = 275;        // 카드 너비
+const GAP = 20;                // 카드 사이 간격
+const VISIBLE = 4;             // 한 화면에 보일 카드 수
+const STEP = CARD_WIDTH + GAP; // 한 칸당 이동 거리
 
-const imageMap = {
-  beige: '/images/yellow-backimg.png',
-  purple: '/images/purple-backimg.png',
-  blue: '/images/blue-backimg.png',
-  green: '/images/green-backimg.png',
-};
-
-function ListPage() {
+export default function ListPage() {
   const [list, setList] = useState([]);
+  const [sortedList, setSortedList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0); // 인기 롤링 페이퍼 인덱스
-  const [recentIndex, setRecentIndex] = useState(0); // 최근 롤링 페이퍼 인덱스
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [recentIndex, setRecentIndex] = useState(0);
+
   const navigate = useNavigate();
   const location = useLocation();
 
-  // API에서 데이터 가져오기
+  // 터치/드래그 제어
+  const startX = useRef(0);
+  const isDragging = useRef(false);
+
+  // 태블릿 여부 판단
+  const [isTablet, setIsTablet] = useState(window.innerWidth <= 1023);
   useEffect(() => {
-    const loadList = async () => {
+    const onResize = () => setIsTablet(window.innerWidth <= 1023);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // 전체 데이터 한 번에 가져오기
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
       try {
-        const data = await fetchRollingList(); // 모든 데이터를 가져옵니다.
-        setList(data.results); // 가져온 데이터 저장
-      } catch (error) {
-        console.error('롤링 리스트 불러오기 실패:', error);
+        const data = await fetchRollingList();
+        setList(data);
+
+        const sortedList = await fetchRollingList('like');
+        setSortedList(sortedList);
+      } catch (e) {
+        console.error(e);
       } finally {
         setLoading(false);
       }
-    };
+    })();
+  }, [location.pathname]);
 
-    loadList();
-  }, [location.pathname]); // 페이지 이동 시마다 다시 불러오기
+  // 인기순 & 최근순 목록
+  const popularList = [...sortedList];
+  const recentList = [...list];
 
-  // 인기 롤링 페이퍼 정렬 (메시지 많은 순, 최대 8개)
-  const popularList = [...list]
-    .sort((a, b) => b.recentMessages.length - a.recentMessages.length)
-    .slice(0, 8); // 최대 8개만 추출
-
-  // 최근에 만든 롤링 페이퍼 정렬 (생성 시간 기준, 최대 8개)
-  const recentList = [...list]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // createdAt을 기준으로 정렬
-    .slice(0, 8); // 최대 8개만 추출
-
-  // 이모지 갯수를 계산하는 함수
-  const getEmojiCount = (reactions) => {
-    const emojiCount = reactions.reduce((acc, emoji) => {
-      acc[emoji] = (acc[emoji] || 0) + 1;  // 이모지의 빈도수를 계산
-      return acc;
-    }, {});
-    return emojiCount;
-  };
-
-  // 각 받은 사람 별로 이모지 갯수 계산
-  const getReactionsByRecipient = () => {
-    const reactionsByRecipient = {};
-
-    list.forEach((item) => {
-      item.recentMessages?.forEach((msg) => { // recentMessages가 없을 수 있으므로 안전하게 처리
-        const recipient = item.recipient;
-
-        // reactions가 존재하는지 확인
-        if (msg.reactions) {
-          if (!reactionsByRecipient[recipient]) {
-            reactionsByRecipient[recipient] = [];
-          }
-          reactionsByRecipient[recipient].push(...msg.reactions);
-        }
-      });
+  // 슬라이드 핸들러
+  const prevSlide = useCallback(() => setCurrentIndex(i => Math.max(0, i - 1)), []);
+  const nextSlide = useCallback(() => {
+    setCurrentIndex(i => {
+      const baseMax = popularList.length - VISIBLE;
+      const maxIdx = isTablet ? baseMax + 1 : baseMax;
+      return i < maxIdx ? i + 1 : i;
     });
+  }, [popularList.length, isTablet]);
 
-    Object.keys(reactionsByRecipient).forEach((recipient) => {
-      reactionsByRecipient[recipient] = getEmojiCount(reactionsByRecipient[recipient]);
+  const prevRecent = useCallback(() => setRecentIndex(i => Math.max(0, i - 1)), []);
+  const nextRecent = useCallback(() => {
+    setRecentIndex(i => {
+      const baseMax = recentList.length - VISIBLE;
+      const maxIdx = isTablet ? baseMax + 1 : baseMax;
+      return i < maxIdx ? i + 1 : i;
     });
+  }, [recentList.length, isTablet]);
 
-    return reactionsByRecipient;
+  // 드래그 제어
+  const onDragStart = e => {
+    const x = e.touches?.[0].clientX ?? e.clientX;
+    startX.current = x;
+    isDragging.current = true;
+  };
+  const onDragEnd = (e, onNext, onPrev) => {
+    if (!isDragging.current) return;
+    const x = e.changedTouches?.[0].clientX ?? e.clientX;
+    const diff = startX.current - x;
+    if (diff > 50) onNext();
+    else if (diff < -50) onPrev();
+    isDragging.current = false;
   };
 
-  const reactionsByRecipient = getReactionsByRecipient();
+  // 배경 스타일 매핑
+  const colorMap = { beige: '#FFE2AD', purple: '#ECD9FF', blue: '#B1E4FF', green: '#D0F5C3' };
+  const imageMap = { beige: '/images/yellow-backimg.png', purple: '/images/purple-backimg.png', blue: '/images/blue-backimg.png', green: '/images/green-backimg.png' };
+  const getBG = (url, color) =>
+    url
+      ? { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+      : { backgroundColor: colorMap[color], backgroundImage: `url(${imageMap[color]})`, backgroundSize: '50%', backgroundPosition: 'bottom right' };
 
-  // 배경 색상 코드 가져오기
-  const getColorCode = (backgroundColor) => {
-    return colorMap[backgroundColor] || '';  // colorMap에서 색상 코드 가져오기
-  };
+  // 공통 캐러셀 렌더링
+  const renderCarousel = (data, idx, onPrev, onNext) => {
+    const wrapperWidth = data.length * CARD_WIDTH + data.length * GAP;
+    const containerWidth = VISIBLE * CARD_WIDTH + (VISIBLE - 1) * GAP;
+    const maxTranslate = wrapperWidth - containerWidth;
+    const move = Math.min(idx * STEP, maxTranslate);
+    const baseMax = data.length - VISIBLE;
+    const maxIdx = isTablet ? baseMax + 1 : baseMax;
 
-  // 배경 이미지 URL을 설정하는 함수
-  const getBackgroundImage = (backgroundImageURL, backgroundColor) => {
-    if (backgroundImageURL) {
-      return {
-        backgroundImage: `url(${backgroundImageURL})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        className: `${styles['imgOn']}`,  // backgroundImageURL이 있을 때 imgOn 클래스 추가
-      };
-    }
+    return (
+      <>
+        <div className={styles['list-page__card-container']}>
+          {loading ? (
+            <p>로딩 중...</p>
+          ) : (
+            <div
+              className={styles['list-page__card-wrapper']}
+              style={{ width: wrapperWidth, transform: `translateX(-${move}px)`, transition: 'transform 0.5s ease', cursor: isDragging.current ? 'grabbing' : 'grab' }}
+              onTouchStart={onDragStart}
+              onMouseDown={onDragStart}
+              onTouchEnd={e => onDragEnd(e, onNext, onPrev)}
+              onMouseUp={e => onDragEnd(e, onNext, onPrev)}
+              onMouseLeave={() => (isDragging.current = false)}
+            >
+              {data.map(item => {
+                // 상위 3개 프로필
+                const profileImages = item.recentMessages.slice(0, 3);
+                // 전체 메시지 수 또는 고유 작성자 수를 사용하려면 item.messageCount 또는 고유 set 사이즈로 교체
+                const totalCount = item.messageCount; // API에서 제공하는 전체 작성자/메시지 수 사용
+                const extraCount = totalCount - profileImages.length;
 
-    // backgroundImageURL이 없으면 색상에 맞는 이미지를 사용
-    return {
-      backgroundColor: getColorCode(backgroundColor),  // 먼저 색상을 설정
-      backgroundImage: `url(${imageMap[backgroundColor]})`, // 색상에 맞는 이미지 설정
-      backgroundSize: '50%',
-      backgroundPosition: 'bottom right',
-    };
-  };
-
-  // 슬라이드를 왼쪽으로 이동하는 함수 (인기 롤링 페이퍼)
-  const prevSlide = () => {
-    setCurrentIndex((prevIndex) => {
-      return prevIndex === 0 ? prevIndex : prevIndex - 1;
-    });
-  };
-
-  // 슬라이드를 오른쪽으로 이동하는 함수 (인기 롤링 페이퍼)
-  const nextSlide = () => {
-    setCurrentIndex((prevIndex) => {
-      return prevIndex === popularList.length - 1 ? prevIndex : prevIndex + 1;
-    });
-  };
-
-  // 슬라이드를 왼쪽으로 이동하는 함수 (최근 롤링 페이퍼)
-  const prevRecentSlide = () => {
-    setRecentIndex((prevIndex) => {
-      return prevIndex === 0 ? prevIndex : prevIndex - 1;
-    });
-  };
-
-  // 슬라이드를 오른쪽으로 이동하는 함수 (최근 롤링 페이퍼)
-  const nextRecentSlide = () => {
-    setRecentIndex((prevIndex) => {
-      return prevIndex === recentList.length - 1 ? prevIndex : prevIndex + 1;
-    });
-  };
-
-  // 카드 클릭 시 상세페이지 이동
-  const handleCardClick = (id) => {
-    navigate(`/post/${id}`);
-  };
-
-  const goToPage = (path) => {
-    navigate(path);
+                return (
+                  <div
+                    key={item.id}
+                    className={`${styles['list-page__card']} ${item.backgroundImageURL ? styles.imgOn : ''}`}
+                    style={getBG(item.backgroundImageURL, item.backgroundColor)}
+                    onClick={() => navigate(`/post/${item.id}`)}
+                  >
+                    <p className={styles['list-page__recipient']}>To. {item.name}</p>
+                    <div className={styles['list-page__profile-wrap']}>                      
+                      {profileImages.map((m, i) => (
+                        <img
+                          key={m.id}
+                          src={m.profileImageURL || '/icons/profile.png'}
+                          className={styles['list-page__profile-image']}
+                          style={{ left: `${i * 16}px` }}
+                        />
+                      ))}
+                      {extraCount > 0 && (
+                        <span className={styles['list-page__profile-count']}>+{extraCount}</span>
+                      )}
+                    </div>
+                    <p className={styles['list-page__count']}><span>{totalCount}</span>명이 작성했어요!</p>
+                    <div className={styles['list-page__emoji-container']}>
+                      {item.topReactions?.map((r, i) =>
+                        r.count > 0 && (
+                          <span key={i} className={styles['list-page__box-emoji']}>
+                            <span className={styles['list-page__real-emoji']}>{r.emoji}</span>
+                            <span className={styles['list-page__num-emoji']}>{r.count}</span>
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className={styles['carousel-buttons-container']}>
+          <button onClick={onPrev} disabled={idx === 0} className={styles['carousel-button']}>❮</button>
+          <button onClick={onNext} disabled={idx >= maxIdx} className={styles['carousel-button']}>❯</button>
+        </div>
+      </>
+    );
   };
 
   return (
     <div className={styles['list-page']}>
       <Header />
-
-      {/* 인기 롤링 페이퍼 */}
       <div className={styles['list-page__popular']}>
         <h2>인기 롤링 페이퍼 🔥</h2>
-        <div className={styles['list-page__card-container']}>
-          {loading ? (
-            <p>로딩 중...</p>
-          ) : (
-            <div
-              className={styles['list-page__card-wrapper']}
-              style={{
-                width: `calc(295px * ${popularList.length})`,
-                transform: `translateX(-${currentIndex * 295}px)`,
-                transition: 'transform 0.5s ease',
-                overflow: 'hidden',
-              }}
-            >
-              {popularList.map((item) => (
-                <div
-                  key={item.id}
-                  className={`${styles['list-page__card']} ${item.backgroundImageURL ? styles['imgOn'] : ''}`}  // imgOn 클래스를 조건부로 추가
-                  style={getBackgroundImage(item.backgroundImageURL, item.backgroundColor)} // 배경 이미지 및 색상 설정
-                  onClick={() => handleCardClick(item.id)}
-                >
-                  <p className={styles['list-page__recipient']}>To. {item.name}</p>
-
-                  <div className={styles['list-page__profile-wrap']}>
-                    {item.recentMessages.slice(0, 3).map((msg, index) => (
-                      <img
-                        key={msg.id}
-                        src={msg.profileImageURL || '/icons/profile.png'}
-                        className={styles['list-page__profile-image']}
-                        style={{ left: `${index * 16}px` }}
-                      />
-                    ))}
-                    {item.recentMessages.length > 3 && (
-                      <span className={styles['list-page__profile-count']}>
-                        +{item.recentMessages.length - 3}
-                      </span>
-                    )}
-                  </div>
-
-                  <p className={styles['list-page__count']}>
-                    <span>{item.recentMessages.length}</span>명이 작성했어요!
-                  </p>
-
-                  <div className={styles['list-page__emoji-container']}>
-                    {Object.entries(reactionsByRecipient[item.recipient] || {})
-                      .sort((a, b) => b[1] - a[1])
-                      .slice(0, 3)
-                      .map(([emoji, count], index) => (
-                        <span key={index} className={styles['list-page__box-emojicount']}>
-                          {emoji} <span className={styles['list-page__num-emojicount']}>{count}</span>
-                        </span>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 캐러셀 버튼 */}
-        <div className={styles['carousel-buttons-container']}>
-          <button onClick={prevSlide} className={styles['carousel-button']} disabled={currentIndex === 0}>
-            ❮
-          </button>
-          <button onClick={nextSlide} className={styles['carousel-button']} disabled={currentIndex === popularList.length - 4}>
-            ❯
-          </button>
-        </div>
+        {renderCarousel(popularList, currentIndex, prevSlide, nextSlide)}
       </div>
-
-      {/* 최근에 만든 롤링 페이퍼 */}
       <div className={styles['list-page__recent']}>
         <h2>최근에 만든 롤링 페이퍼 ⭐️️</h2>
-        <div className={styles['list-page__card-container']}>
-          {loading ? (
-            <p>로딩 중...</p>
-          ) : (
-            <div
-              className={styles['list-page__card-wrapper']}
-              style={{
-                width: `calc(295px * ${recentList.length})`,
-                transform: `translateX(-${recentIndex * 295}px)`,
-                transition: 'transform 0.5s ease',
-                overflow: 'hidden',
-              }}
-            >
-              {recentList.map((item) => (
-                <div
-                  key={item.id}
-                  className={`${styles['list-page__card']} ${item.backgroundImageURL ? styles['imgOn'] : ''}`}  // imgOn 클래스를 조건부로 추가
-                  style={getBackgroundImage(item.backgroundImageURL, item.backgroundColor)} // 배경 이미지 및 색상 설정
-                  onClick={() => handleCardClick(item.id)}
-                >
-                  <p className={styles['list-page__recipient']}>To. {item.name}</p>
-
-                  <div className={styles['list-page__profile-wrap']}>
-                    {item.recentMessages.slice(0, 3).map((msg, index) => (
-                      <img
-                        key={msg.id}
-                        src={msg.profileImageURL || '/icons/profile.png'}
-                        className={styles['list-page__profile-image']}
-                        style={{ left: `${index * 16}px` }}
-                      />
-                    ))}
-                    {item.recentMessages.length > 3 && (
-                      <span className={styles['list-page__profile-count']}>
-                        +{item.recentMessages.length - 3}
-                      </span>
-                    )}
-                  </div>
-
-                  <p className={styles['list-page__count']}>
-                    <span>{item.recentMessages.length}</span>명이 작성했어요!
-                  </p>
-
-                  <div className={styles['list-page__emoji-container']}>
-                    {Object.entries(reactionsByRecipient[item.recipient] || {})
-                      .sort((a, b) => b[1] - a[1])
-                      .slice(0, 3)
-                      .map(([emoji, count], index) => (
-                        <span key={index} className={styles['list-page__box-emojicount']}>
-                          {emoji} <span className={styles['list-page__num-emojicount']}>{count}</span>
-                        </span>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 최근 롤링 페이퍼 캐러셀 버튼 */}
-        <div className={styles['carousel-buttons-container']}>
-          <button onClick={prevRecentSlide} className={styles['carousel-button']} disabled={recentIndex === 0}>
-            ❮
-          </button>
-          <button onClick={nextRecentSlide} className={styles['carousel-button']} disabled={recentIndex === recentList.length - 4}>
-            ❯
-          </button>
-        </div>
+        {renderCarousel(recentList, recentIndex, prevRecent, nextRecent)}
       </div>
-
       <div className={styles['list-page__buttons']}>
-        <Button onClick={() => goToPage('/post')} className={buttonStyles.button__primary}>
-          나도 만들어보기
-        </Button>
+        <Button onClick={() => navigate('/post')} className={buttonStyles.button__primary}>나도 만들어보기</Button>
       </div>
     </div>
   );
 }
-
-export default ListPage;
